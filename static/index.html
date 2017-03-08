@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Testing...</title>
+  <script type="text/javascript" src="/static/lut.js"></script>
+  <script type="text/javascript" src="/static/datamanage.js"></script>
+</head>
+<body>
+  <input id="message" />
+  <input id="submit" type="button" value="Send" />
+  <p id="response"></p>
+  <script type="text/javascript">
+    var input_el = document.querySelector("#message");
+    var output_el = document.querySelector("#response");
+    var submit_btn = document.querySelector("#submit");
+    var ws = build_socket("/api",false);
+    var schema = {};
+    var storage = new DataPersist.RuntimeStorage(schema,true);
+    var data_bucket = new DataPersist.DataPersist(storage);
+
+    function build_socket(point,rel) {
+      var loc = window.location, new_uri;
+      rel = rel || false;
+      if (loc.protocol === "https:") {
+        new_uri = "wss:";
+      } else {
+        new_uri = "ws:";
+      }
+      new_uri += "//" + loc.host;
+      new_uri += rel ? loc.pathname + point : point;
+      return new WebSocket(new_uri);
+    }
+
+    function on_message_received(event) {
+      output_el.innerHTML = event.data;
+    }
+
+    function send_message() {
+      var data = JSON.stringify({
+        operation: "write",
+        data: input_el.value
+      });
+      console.log("sending",data);
+      ws.send(data);
+      input_el.value = "";
+    }
+
+    function init() {
+      new DataPersist.SocketConnection(ws,null,data_bucket);
+      ws.addEventListener("message",on_message_received);
+      submit_btn.addEventListener("click",send_message);
+    }
+
+    init();
+
+  </script>
+</body>
+</html>
