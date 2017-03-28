@@ -14,6 +14,53 @@ const Translator = typeof LUT === "undefined" ?
       return this;
     }
 
+    list_keys(cb) {
+      cb([]);
+    }
+
+    load_view(view_name,src,cb) {
+      this.list_keys((function(keys){
+        var valid_keys = keys.filter(function(x){
+          // key is valid if it starts with `views/${view_name}`
+          return x.startsWith(["views",view_name].join("/"));
+        });
+        var pass = [];
+        var reject = [];
+
+        function touchback(key,accept) {
+          var results = [];
+
+          function touchback_two(data) {
+            results.push(data); // store the view document
+            if(results.length==pass.length) {
+              // we have loaded all relevant data.
+              cb(results);
+            }
+          }
+
+          // if permissions check out, add to the acceptable documents.
+          if(accept) pass.push(key);
+          else reject.push(key);
+
+          // once we have all the acceptable keys, load the actual data.
+          if(reject.length + pass.length == valid_keys.length) {
+            reject = [];
+            for(var key of pass) {
+              this.load_data(key,touchback_two.bind(this));
+            }
+          }
+        }
+
+        for(var key of valid_keys) {
+          // all valid keys have been identified
+          // remove the ones src has no permission to access.
+          get_permissions(key,function(permissions){
+            touchback.call(this,key,this.fulfills_permissions(permissions,src));
+          }.bind(this));
+        }
+      }).bind(this));
+    }
+
     exists(id,src,cb) {
       var that = this;
       that.get_permissions(id,(function(permissions){
@@ -72,7 +119,26 @@ const Translator = typeof LUT === "undefined" ?
 
     update_views(doc,is_new) {
       var that = this;
-      if(!this.store_view_results) return;
+      if(!this.store_view_results)
+        return;
+      var affected = {};
+
+      for(var view_name in this.view_transforms) {
+        var view = this.view_transforms[view_name];
+        var emit = view["emit"];
+        var result = emit(doc);
+        if(result!=null) {
+          affected[view_name] = result;
+        }
+      }
+
+      for(var view_name in affected) {
+        var newdoc = affected[view_name];
+        var view_key = ["views",view_name,newdoc["id"]].join("/");
+        newdoc["id"] = view_key;
+        this.write(newdoc);
+      }
+
     }
   }
 
@@ -81,7 +147,6 @@ const Translator = typeof LUT === "undefined" ?
       super(v,s);
       this.docs = {};// id: {perms:{<uid>:'rwh'},create,modified,revisions:[{ts,data}],data}
       this.view_emits = {};// view_name: {doc_id:emit_result}
-      this.view_reductions = {};// view_name: <results>
       this.view_transforms = {}; // view_name: {function map, function reduce}
     }
 
